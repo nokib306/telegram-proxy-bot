@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: bthe-proxy-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+```
+
+7. **Click:** "Commit changes"
+
+---
+
+### Step 2: Deploy on Render
+
+1. **Go to:** https://dashboard.render.com
+2. **Click:** "New +" → "Web Service"
+3. **Click:** "Connect account" → Select **GitHub**
+4. **Authorize Render** to access your GitHub
+5. **Select your repository:** `telegram-proxy-bot`
+6. **Fill in details:**
+   - **Name:** `bthe-proxy-bot`
+   - **Environment:** `Python 3`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python bot.py`
+   - **Plan:** Select **FREE** ✅
+
+7. **Click:** "Create Web Service"
+
+---
+
+### Step 3: Wait for Deployment
+
+- Render will automatically:
+  - Install Python
+  - Install dependencies
+  - Start your bot
+  - Keep it running 24/7!
+
+- You'll see logs like:
+```
+🤖 Bot is running on Render.com...
+```
+
+---
+
+## ✅ Your Bot is Now LIVE 24/7!
+
+**Your bot URL will be:** `https://bthe-proxy-bot.onrender.com`
+
+Visit it in browser - you'll see: "✅ B-The Proxy Bot is running!"
+
+---
+
+## 📁 Files You Need:
+
+**1. bot.py** - (Already updated with keep-alive above ✅)
+
+**2. requirements.txt:**
+```
+python-telegram-bot==20.7
+flask==3.0.0
