@@ -1,2 +1,23 @@
+python-3.11.9
+```
+
+And **requirements.txt** update korun:
+```
 python-telegram-bot==20.7
-flask==3.0.0
+```
+
+---
+
+## 📝 Steps:
+
+1. **GitHub e jaan** → Your repo
+2. **Create new file** → Name: `runtime.txt`
+3. **Content:**
+```
+   python-3.11.9
+```
+4. **Commit** korun
+
+5. **requirements.txt** e just ei ta rakhun:
+```
+   python-telegram-bot==20.7
