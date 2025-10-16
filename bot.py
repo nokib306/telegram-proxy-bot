@@ -15,11 +15,15 @@ app = Flask('')
 def home():
     return "✅ B-The Proxy Bot is running!"
 
-def run():
+@app.route('/health')
+def health():
+    return {"status": "ok", "bot": "running"}
+
+def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
-    t = Thread(target=run)
+    t = Thread(target=run_flask, daemon=True)
     t.start()
 
 # Configure logging
@@ -54,7 +58,7 @@ proxies = {}
 user_sessions = {}
 
 # Admin Chat ID
-ADMIN_CHAT_ID = '8083915428'
+ADMIN_CHAT_ID = '8083915428'  # Your admin chat ID
 
 # Initialize data storage
 def init_data():
@@ -625,7 +629,188 @@ async def handle_proxy_details_input(update, context, user_id, proxy_ip):
     ip = proxy_ip.strip()
     
     # Validate IP format (basic check)
-    if not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+    if not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo uploads (payment screenshots)"""
+    user_id = str(update.effective_user.id)
+    session = user_sessions.get(user_id, {})
+    
+    if session.get('state') == 'awaiting_screenshot':
+        order_id = session.get('order_id')
+        if order_id and order_id in orders:
+            photo = update.message.photo[-1]
+            file_id = photo.file_id
+            
+            orders[order_id]['screenshot'] = file_id
+            orders[order_id]['status'] = 'pending_approval'
+            orders[order_id]['submitted_at'] = datetime.now().isoformat()
+            save_orders()
+            
+            await update.message.reply_text(
+                f"""✅ *Payment information received!*
+
+📋 Order ID: `{order_id}`
+💳 Transaction ID: `{orders[order_id]['transaction_id']}`
+
+Your order is now pending approval. You'll receive your proxy details once the admin approves your payment.
+
+⏱️ Approval usually takes 5-30 minutes.""",
+                parse_mode='Markdown'
+            )
+            
+            # Notify admin
+            await notify_admin_new_order(context, order_id)
+            
+            if user_id in user_sessions:
+                del user_sessions[user_id]
+
+async def notify_admin_new_order(context, order_id):
+    """Notify admin about new order"""
+    order = orders[order_id]
+    user = users.get(order['user_id'], {})
+    
+    admin_message = f"""
+🔔 *New Payment Received!*
+
+📋 Order ID: `{order_id}`
+👤 User: {user.get('email', 'Unknown')}
+🔧 Type: *{order['proxy_type']}*
+⏱️ Duration: *{order['duration']} hours*
+💰 Amount: *{order['price']} BDT*
+💳 Transaction ID: `{order.get('transaction_id', 'N/A')}`
+
+⚠️ *Please confirm this payment:*
+"""
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ YES - Approve", callback_data=f'admin_yes_{order_id}'),
+            InlineKeyboardButton("❌ NO - Reject", callback_data=f'admin_no_{order_id}')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID, 
+            text=admin_message, 
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        # Send screenshot
+        if order.get('screenshot'):
+            await context.bot.send_photo(chat_id=ADMIN_CHAT_ID, photo=order['screenshot'])
+    except Exception as e:
+        logger.error(f"Error notifying admin: {e}")
+
+async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /approve command"""
+    user_id = str(update.effective_user.id)
+    
+    if user_id != ADMIN_CHAT_ID:
+        await update.message.reply_text('❌ You don\'t have admin access!')
+        return
+    
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            '❌ Usage: `/approve ORDER_ID IP:PORT:USERNAME:PASSWORD`\n\nExample: `/approve 12345 192.168.1.1:8080:user:pass`',
+            parse_mode='Markdown'
+        )
+        return
+    
+    order_id = context.args[0]
+    proxy_details = context.args[1]
+    
+    if order_id not in orders:
+        await update.message.reply_text('❌ Order not found')
+        return
+    
+    try:
+        ip, port, username, password = proxy_details.split(':')
+    except ValueError:
+        await update.message.reply_text('❌ Invalid format. Use: IP:PORT:USERNAME:PASSWORD')
+        return
+    
+    order = orders[order_id]
+    
+    # Calculate expiry
+    expiry_date = datetime.now() + timedelta(hours=order['duration'])
+    
+    # Create proxy
+    proxy = {
+        'proxy_id': generate_id(),
+        'order_id': order_id,
+        'type': order['proxy_type'],
+        'ip': ip,
+        'port': port,
+        'username': username,
+        'password': password,
+        'expires_at': expiry_date.isoformat(),
+        'created_at': datetime.now().isoformat()
+    }
+    
+    # Add to user's proxies
+    user_id = order['user_id']
+    if user_id not in proxies:
+        proxies[user_id] = []
+    
+    proxies[user_id].append(proxy)
+    order['status'] = 'approved'
+    order['approved_at'] = datetime.now().isoformat()
+    
+    save_proxies()
+    save_orders()
+    
+    # Notify user
+    user_message = f"""
+✅ *Payment Approved!*
+
+Your proxy is now active:
+
+🔧 Type: *{proxy['type']}*
+📍 IP: `{proxy['ip']}`
+🔌 Port: `{proxy['port']}`
+👤 Username: `{proxy['username']}`
+🔑 Password: `{proxy['password']}`
+
+⏰ Expires: {expiry_date.strftime('%Y-%m-%d %H:%M:%S')}
+
+Thank you for using B-The Proxy! 🌐
+"""
+    
+    try:
+        await context.bot.send_message(chat_id=int(user_id), text=user_message, parse_mode='Markdown')
+        await update.message.reply_text(f'✅ Order #{order_id} approved and user notified!')
+    except Exception as e:
+        await update.message.reply_text(f'✅ Order approved but couldn\'t notify user: {e}')
+
+def main():
+    """Start the bot"""
+    # Initialize data
+    init_data()
+    
+    # Start keep-alive server
+    keep_alive()
+    
+    # Create application
+    application = Application.builder().token(TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("approve", approve_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    
+    # Start bot
+    print("🤖 Bot is running on Render.com...")
+    print(f"📁 Data directory: {os.path.abspath(DATA_DIR)}")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main(), ip):
         await update.message.reply_text(
             '❌ Invalid IP format. Please enter a valid IP address.\n\nExample: `192.168.1.100`',
             parse_mode='Markdown'
@@ -633,6 +818,7 @@ async def handle_proxy_details_input(update, context, user_id, proxy_ip):
         return
     
     order = orders[order_id]
+    
     # Auto-generate proxy details
     port = '8080' if order['proxy_type'] == 'HTTP' else '1080'
     username = f"user{order_id[-6:]}"
@@ -832,11 +1018,11 @@ async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     
     # Add to user's proxies
-    customer_user_id = order['user_id']
-    if customer_user_id not in proxies:
-        proxies[customer_user_id] = []
+    user_id = order['user_id']
+    if user_id not in proxies:
+        proxies[user_id] = []
     
-    proxies[customer_user_id].append(proxy)
+    proxies[user_id].append(proxy)
     order['status'] = 'approved'
     order['approved_at'] = datetime.now().isoformat()
     
@@ -861,16 +1047,13 @@ Thank you for using B-The Proxy! 🌐
 """
     
     try:
-        await context.bot.send_message(chat_id=int(customer_user_id), text=user_message, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=int(user_id), text=user_message, parse_mode='Markdown')
         await update.message.reply_text(f'✅ Order #{order_id} approved and user notified!')
     except Exception as e:
         await update.message.reply_text(f'✅ Order approved but couldn\'t notify user: {e}')
 
 def main():
     """Start the bot"""
-    # Start keep-alive server
-    keep_alive()
-    
     # Initialize data
     init_data()
     
