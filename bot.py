@@ -811,7 +811,6 @@ if __name__ == '__main__':
         return
     
     order = orders[order_id]
-    
     # Auto-generate proxy details
     port = '8080' if order['proxy_type'] == 'HTTP' else '1080'
     username = f"user{order_id[-6:]}"
